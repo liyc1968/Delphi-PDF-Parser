@@ -1,0 +1,1 @@
+Delphi-PDF-Parser is distributed under GNU AFFERO GPL V3. Because you will implicitely also be using MuPDF, its license GNU AFFERO GPL V3 applies as well. Copies of both are included in this repository.

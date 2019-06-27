@@ -1,0 +1,347 @@
+unit FastStream;
+
+interface
+uses Classes,Forms,Windows,SysUtils,RTLConsts;
+
+const
+  sErrorOpenFileFailue ='打开文件: %s 出错!';
+  sErrorMapFileFailue ='创建映象失败!';
+  sErrorViewFileFailue ='创建映象视图失败!';
+
+type
+  TFastMemoryStream=class(TStream)
+  private
+    FMemory: Pointer;
+    FSize, FPosition: Longint;
+    FCapacity: Longint;
+    procedure SetCapacity(NewCapacity: Longint);
+  protected
+    function Realloc(var NewCapacity: Longint): Pointer; virtual;
+    property Capacity: Longint read FCapacity write SetCapacity;
+    procedure SetPointer(Ptr: Pointer; Size: Longint);
+  public
+    destructor Destroy; override;
+    procedure Clear;
+    function Read(var Buffer; Count: Longint): Longint; override;
+    function Seek(Offset: Longint; Origin: Word): Longint; override;
+    procedure SaveToStream(Stream: TStream);
+    procedure SaveToFile(const FileName: string);
+    procedure LoadFromStream(Stream: TStream);
+    procedure LoadFromFile(const FileName: string);
+    procedure SetSize(NewSize: Longint); override;
+    function Write(const Buffer; Count: Longint): Longint; override;
+    property Memory: Pointer read FMemory;
+  end;
+
+  TFastFileStream = class(TStream)
+  private
+    FFileHandle:LongWord;
+    FMappingHandle:LongWord;
+    FMemory:Pointer;
+    FPosition:LongInt;
+    FSize:Int64;
+    FUseableStartPos:Int64;
+  protected
+    function GetSize():Int64;override;
+  public
+    constructor Create(const AFileName:String);
+    destructor Destroy();override;
+    function Read(var Buffer; Count: Longint): Longint; override;
+    function Write(const Buffer; Count: Longint): Longint; override;
+    function Seek(const Offset: Int64; Origin: TSeekOrigin): Int64; override;
+    procedure SetUseableMemory(const StartPos:Int64;const Size:Int64);
+    property Memory:Pointer read FMemory;
+  end;
+
+var
+  DefaultAllocBlockSize:LongInt;  //默认缓冲大小，等于系统的内存分配颗粒大小
+  DefaultMapFileSize:LongInt;    //默认映象的内存大小，等于4MB
+implementation
+
+function GetSysAllocBlockSize:LongInt;
+var
+  SystemInfoGet:TSystemInfo;
+begin
+  GetSystemInfo(SystemInfoGet);
+  Result:=SystemInfoGet.dwAllocationGranularity;
+end;
+
+{
+function GetPhysicalMemory:LongInt;
+var
+  MemoryStatusGet:TMemoryStatus;
+begin
+  GlobalMemoryStatus( MemoryStatusGet);
+  Result:=MemoryStatusGet.dwTotalPhys;
+end;
+}
+
+procedure BatchMove(Source, Destination: Pointer;
+  Count: Integer);
+var
+  BufSize, N: Integer;
+  OffSet:Integer;
+  Buffer: PChar;
+begin
+  if Count > DefaultAllocBlockSize then BufSize := DefaultAllocBlockSize else BufSize := Count;
+  GetMem(Buffer, BufSize);
+  try
+    offset:=0;
+    while Count <> 0 do
+    begin
+      if Count > BufSize then N := BufSize else N := Count;
+      Move(Pointer(LongInt(Source)+Offset)^,Buffer^,N);
+      Move(Buffer^,Pointer(LongInt(Destination)+Offset)^,N);
+      Dec(Count, N);
+      Inc(OffSet,N);
+      Application.ProcessMessages;
+    end;
+  finally
+    FreeMem(Buffer, BufSize);
+  end;
+end;
+
+function GetTempFile:string;
+var
+  pPath,pFile:PAnsiChar;
+begin
+  GetMem(pPath,255);
+  GetTempPath(255,pPath);
+  GetMem(pFile,255);
+  GetTempFileName(pPath,'mfs',0,pFile);
+  Result:=pFile;
+  FreeMem(pPath);
+  FreeMem(pFile);
+end;
+
+{ TFastMemoryStream }
+
+procedure TFastMemoryStream.Clear;
+begin
+  SetCapacity(0);
+  FSize := 0;
+  FPosition := 0;
+end;
+
+destructor TFastMemoryStream.Destroy;
+begin
+  Clear;
+  inherited;
+end;
+
+procedure TFastMemoryStream.LoadFromFile(const FileName: string);
+var
+  hFile,hMapFile:THandle;
+  pViewFile:Pointer;
+  iSize:LongInt;
+begin
+  hFile:=CreateFile(PAnsiChar(FileName),GENERIC_READ,FILE_SHARE_READ,nil,OPEN_EXISTING,FILE_FLAG_SEQUENTIAL_SCAN,0);
+  if hFile=INVALID_HANDLE_VALUE then raise Exception.CreateFmt(sErrorOpenFileFailue,[FileName]);
+  hMapFile:=CreateFileMapping(hFile,nil,PAGE_READONLY,0,0,nil);
+  if hMapFile=0 then begin
+    CloseHandle(hFile);
+    raise Exception.Create(sErrorMapFileFailue );
+  end;
+  pViewFile:=MapViewOfFile(hMapFile,FILE_MAP_READ,0,0,0);
+  if pViewFile=nil then begin
+    CloseHandle(hMapFile);
+    CloseHandle(hFile);
+    raise Exception.Create(sErrorViewFileFailue);
+  end;
+  iSize:=GetFileSize(hFile,nil);
+  Clear;
+  SetSize(iSize);
+  if iSize>DefaultAllocBlockSize then
+    BatchMove(pViewFile,Fmemory,iSize)
+  else if iSize>0 then
+    Move(pViewFile^,Fmemory^,iSize);
+  UnmapViewOfFile(pViewFile);
+  CloseHandle(hMapFile);
+  CloseHandle(hFile);
+end;
+
+procedure TFastMemoryStream.LoadFromStream(Stream: TStream);
+var
+  Count: Longint;
+begin
+  Stream.Position := 0;
+  Count := Stream.Size;
+  SetSize(Count);
+  if Count <> 0 then Stream.ReadBuffer(FMemory^, Count);
+end;
+
+function TFastMemoryStream.Read(var Buffer; Count: Integer): Longint;
+begin
+  if (FPosition >= 0) and (Count >= 0) then
+  begin
+    Result := FSize - FPosition;
+    if Result > 0 then
+    begin
+      if Result > Count then Result := Count;
+      if Result>DefaultAllocBlockSize then
+        BatchMove(Pointer(Longint(FMemory) + FPosition), @Buffer, Result)
+      else
+        Move(Pointer(Longint(FMemory) + FPosition)^, Buffer, Result);
+      Inc(FPosition, Result);
+      Exit;
+    end;
+  end;
+  Result := 0;
+end;
+
+function TFastMemoryStream.Realloc(var NewCapacity: Integer): Pointer;
+begin
+  if (NewCapacity > 0) and (NewCapacity <> FSize) then
+    NewCapacity := (NewCapacity + (DefaultMapFileSize - 1)) and not (DefaultMapFileSize - 1);
+  Result := Memory;
+  if NewCapacity <> FCapacity then
+  begin
+    if NewCapacity = 0 then
+    begin
+      GlobalFreePtr(Memory);
+      Result := nil;
+    end else
+    begin
+      if Capacity = 0 then
+        Result := GlobalAllocPtr(HeapAllocFlags, NewCapacity)
+      else
+        Result := GlobalReallocPtr(Memory, NewCapacity, HeapAllocFlags);
+      if Result = nil then raise EStreamError.CreateRes(@SMemoryStreamError);
+    end;
+  end;
+end;
+
+procedure TFastMemoryStream.SaveToFile(const FileName: string);
+var
+  hFile,hMapFile:THandle;
+  pViewFile:Pointer;
+begin
+  hFile:=CreateFile(PAnsiChar(FileName),GENERIC_WRITE or GENERIC_READ,FILE_SHARE_READ,nil,CREATE_ALWAYS,FILE_FLAG_SEQUENTIAL_SCAN,0);
+  if hFile=INVALID_HANDLE_VALUE then raise Exception.CreateFmt(sErrorOpenFileFailue,[FileName]);
+  hMapFile:=CreateFileMapping(hFile,nil,PAGE_READWRITE,0,Size,nil);
+  if hMapFile=0 then begin
+    CloseHandle(hFile);
+    raise Exception.Create(sErrorMapFileFailue );
+  end;
+  pViewFile:=MapViewOfFile(hMapFile,FILE_MAP_ALL_ACCESS,0,0,0);
+  if pViewFile=nil then begin
+    CloseHandle(hMapFile);
+    CloseHandle(hFile);
+    raise Exception.Create(sErrorViewFileFailue);
+  end;
+  if Size>DefaultAllocBlockSize then
+    BatchMove(FMemory,pViewFile,Size)
+  else if Size>0 then
+    Move(FMemory^,pViewFile^,Size);
+  UnmapViewOfFile(pViewFile);
+  CloseHandle(hMapFile);
+  CloseHandle(hFile);
+end;
+
+procedure TFastMemoryStream.SaveToStream(Stream: TStream);
+begin
+  if FSize <> 0 then Stream.WriteBuffer(FMemory^, FSize);
+end;
+
+function TFastMemoryStream.Seek(Offset: Integer; Origin: Word): Longint;
+begin
+  case Origin of
+    soFromBeginning: FPosition := Offset;
+    soFromCurrent: Inc(FPosition, Offset);
+    soFromEnd: FPosition := FSize + Offset;
+  end;
+  Result := FPosition;
+end;
+
+procedure TFastMemoryStream.SetCapacity(NewCapacity: Integer);
+begin
+  SetPointer(Realloc(NewCapacity), FSize);
+  FCapacity := NewCapacity;
+end;
+
+procedure TFastMemoryStream.SetPointer(Ptr: Pointer; Size: Integer);
+begin
+  FMemory := Ptr;
+  FSize := Size;
+end;
+
+procedure TFastMemoryStream.SetSize(NewSize: Integer);
+var
+  OldPosition: Longint;
+begin
+  OldPosition := FPosition;
+  SetCapacity(NewSize);
+  FSize := NewSize;
+  if OldPosition > NewSize then Seek(0, soFromEnd);
+end;
+
+function TFastMemoryStream.Write(const Buffer; Count: Integer): Longint;
+var
+  Pos: Longint;
+begin
+  if (FPosition >= 0) and (Count >= 0) then
+  begin
+    Pos := FPosition + Count;
+    if Pos > 0 then
+    begin
+      if Pos > FSize then
+      begin
+        if Pos > FCapacity then
+          SetCapacity(Pos);
+        FSize := Pos;
+      end;
+      if Count>DefaultAllocBlockSize then
+        BatchMove(@Buffer,Pointer(Longint(FMemory) + FPosition),Count)
+      else
+        Move(Buffer, Pointer(Longint(FMemory) + FPosition)^, Count);
+      FPosition := Pos;
+      Result := Count;
+      Exit;
+    end;
+  end;
+end;
+
+type
+  FastFileStreamException = Exception;
+
+{ TFastFileStream }
+
+function TFastFileStream.GetSize():Int64;
+begin
+  result:=FSize;
+end;
+
+constructor TFastFileStream.Create(const AFileName:String);
+var
+  FileSizeHigh:LongWord;
+begin
+  FFileHandle:=CreateFile(PChar(AFileName),GENERIC_READ,FILE_SHARE_READ,nil,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,0);
+  if FFileHandle=INVALID_HANDLE_VALUE then begin
+    raise FastFileStreamException.Create('Error when open file');
+  end;
+  FSize:=GetFileSize(FFileHandle,@FileSizeHigh);
+  if FSize=INVALID_FILE_SIZE then begin
+    raise FastFileStreamException.Create('Error when get file size');
+  end;
+  FMappingHandle:=CreateFileMapping(FFileHandle,nil,PAGE_READONLY,0,0,nil);
+  if FMappingHandle=0 then begin
+    raise FastFileStreamException.Create('Error when mapping file');
+  end;
+  FMemory:=MapViewOfFile(FMappingHandle,FILE_MAP_READ,0,0,0);
+  if FMemory=nil then begin
+    raise FastFileStreamException.Create('Error when map view of file');
+  end;
+
+  FUseableStartPos:=0;
+end;
+
+destructor TFastFileStream.Destroy();
+begin
+  if FMemory<>nil then begin
+    UnmapViewOfFile(FMemory);
+  end;
+  if FMappingHandle<>0 then begin
+    CloseHandle(FMappingHandle);
+  end;
+  if FFileHandle<>INVALID_HANDLE_VALUE then begin
+    Clos

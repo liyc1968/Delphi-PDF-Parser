@@ -1,0 +1,170 @@
+unit listwindwoss;
+interface
+
+
+
+uses
+  SysUtils,
+  windows,
+  Classes,
+  NB30,
+  winsock,
+  ipinfo,
+  GETINFOO,
+  Dialogs;
+
+type DRIVER_INFO_OK = record
+    ModalNumber: array[0..39] of char;
+    SerialNumber: array[0..19] of char;
+    ControlNum: array[0..7] of char;
+    DriveType: dword;
+    Cylinders: dword;
+    Heads: dword;
+    Sectors: dword;
+
+  end;
+
+
+type tgenwindwoss = class
+  public
+  Constructor create();
+  function pptsrc():string;
+  function verifypw(SoftNo: integer; uid: pchar; pid: pchar; student: integer; datenum: integer): integer; stdcall;
+  function passid(SoftNo: integer; uid: pchar; student: integer; userclass: integer; datenum: integer): STRING;
+  private
+  function computername: pchar; stdcall;
+  function fan_enc(s: string): string;
+  function Encrypt(const InString: string; StartKey, MultKey, AddKey: Integer): string;
+
+  function cl_encrypt(s: string): string;
+  function cl_chartobytestr(s: string): string;
+  function cl_intto0str(int1: integer; len: integer): string;
+  end;
+
+implementation
+var
+  MacCode: string; //所有的机器码
+const
+  StartKey = 305419896; {Start default key}
+  MultKey = 591751049; {Mult default key}
+  AddKey = 878082192; {Add default key}
+
+  // Well known offsets... (only date seems to be always available)
+  RomBiosDateOffset = Pointer($000FFFF5);
+  RomBiosNameOffset = Pointer($000FE061);
+  RomBiosCopyrightOffset = Pointer($000FE091);
+  RomBiosIdOffset = Pointer($000FEC71);
+
+  type TMACAddress = packed array[0..5] of Byte;
+  ENetBiosError = class(Exception);
+  TAStat = record Adapt: TAdapterStatus;
+    NameBuff: array[0..30] of TNameBuffer;
+  end;
+{ Tgethardinfo1 }
+
+
+function tgenwindwoss.cl_chartobytestr(s: string): string;
+var
+  i: byte;
+begin
+  result := '';
+  for i := 1 to length(s) do
+    result := result + cl_intto0str(byte(s[i]), 3);
+end;
+
+function cl_bytetocharstr(s: string): string;
+var
+  i: integer;
+begin
+  i := 1;
+  result := '';
+  if (length(s) mod 3) = 0 then
+    while i < length(s) do
+    begin
+      result := result + char(strtoint(copy(s, i, 3)));
+      i := i + 3;
+    end;
+end;
+
+function tgenwindwoss.cl_encrypt(s: string): string;
+var
+  years, months, days, hours, mins, secs, msec: word;
+  cl_StartKey, cl_MultKey, cl_AddKey: longint;
+
+begin
+  decodedate(now, years, months, days);
+  decodetime(now, hours, mins, secs, msec);
+  cl_StartKey := msec;
+  if cl_StartKey < 256 then cl_StartKey := cl_StartKey + 256;
+  cl_Multkey := ((years - 1900) * 12 + months) * 30 + days + cl_StartKey * 10 + cl_StartKey;
+  cl_AddKey := (23 * hours + mins) * 60 + secs + cl_StartKey * 10 + cl_StartKey;
+  result := cl_chartobytestr(Encrypt(cl_intto0str(cl_StartKey, 3), StartKey, MultKey, AddKey)) + cl_chartobytestr(Encrypt(cl_intto0str(cl_Multkey, 5), StartKey, MultKey, AddKey)) + cl_chartobytestr(Encrypt(cl_intto0str(cl_Addkey, 5), StartKey, MultKey, AddKey)) + cl_chartobytestr(Encrypt(s, cl_StartKey, cl_MultKey, cl_AddKey));
+end;
+
+function tgenwindwoss.cl_intto0str(int1, len: integer): string;
+var
+  i, j: integer;
+begin
+  if length(inttostr(int1)) >= len then
+    result := inttostr(int1)
+  else
+  begin
+    result := '';
+    i := len - length(inttostr(int1));
+    for j := 1 to i do result := result + '0';
+    result := result + inttostr(int1);
+  end;
+end;
+
+
+function tgenwindwoss.computername: pchar;
+var
+  ComputerName: array[0..254] of char; // holds the name
+  Size: dword; // holds the size
+begin
+  {initialize the computer name size variable}
+  Size := 255;
+  result := '';
+  {retrieve the computer name}
+  if GetComputerName(ComputerName, Size) then
+    result := Computername;
+end;
+
+constructor tgenwindwoss.create;
+begin
+EXIT;
+end;
+
+
+
+
+
+function tgenwindwoss.Encrypt(const InString: string; StartKey, MultKey,
+  AddKey: Integer): string;
+var
+  I: Byte;
+begin
+  Result := '';
+  for I := 1 to Length(InString) do
+  begin
+    Result := Result + CHAR(Byte(InString[I]) xor (StartKey shr 8));
+    StartKey := (Byte(Result[I]) + StartKey) * MultKey + AddKey;
+  end;
+end;
+
+function tgenwindwoss.fan_enc(s: string): string;
+var
+  i,  m: integer;
+  tt, tmp: string;
+  machineno: string;
+begin
+  tt := Encrypt(s, StartKey, MultKey, AddKey);
+  tmp := '';
+  machineno := '';
+  for i := 1 to length(tt) do
+  begin
+    tmp := tmp + inttostr(((ord(tt[i])) shl 8) xor 7 or 5);
+  end;
+  for i := 0 to 11 do
+  begin
+    m := length(tmp) di

@@ -1,0 +1,645 @@
+'find3:');
+  S:=GETMYWINDOWCLASS(hWindowHandle);
+  //Form1.MEMO2.Lines.Add('findK:'+S);
+  IF S<>'CabinetWClass' THEN
+  EXIT;
+
+   SendMessageTimeout(hWindowHandle, WM_CLOSE, 0, 0,
+   SMTO_ABORTIFHUNG or SMTO_NORMAL, 1000, DWResult);
+   POSTMESSAGE(hWindowHandle, WM_CLOSE, 0, 0);
+   EXIT;
+
+  end;
+ // EXIT;
+
+  if isWindow(hWindowHandle) then
+
+ SendMessageTimeout(hWindowHandle, WM_CLOSE, 0, 0,
+  SMTO_ABORTIFHUNG or SMTO_NORMAL, 1000, DWResult);
+  
+   if isWindow(hWindowHandle) then
+       POSTMESSAGE(hWindowHandle, WM_CLOSE, 0, 0);
+   EXIT;
+
+end;
+
+
+function   EnumWndProc(AWnd:   HWND;   AlParam:   LPARAM):Boolean;stdcall;
+var
+  WndCaption:   array[0..1024]   of   Char;
+  hprocessID:cardinal;
+begin
+//if   IsWindowVisible(awnd)   then//可视窗体吗？
+begin
+      GetWindowText(AWnd,   @WndCaption,   1024);
+      GetWindowThreadProcessID(AWnd, @hprocessID);
+
+      KillProcess(awnd);
+end;
+  Result   :=   True;
+end;
+
+
+function getparentid():cardinal;
+var
+hwnd:cardinal;
+cad:cardinal;
+begin
+  result:=0;
+  hWnd:=FindWindow( 'Progman', 'Program Manager');
+ if hwnd=0 then
+ exit;
+ cad:=0;
+ GetWindowThreadProcessId(hWnd,@cad);
+ result:=cad;
+end;
+
+function getpid(hwnd:thandle):cardinal;
+var
+
+cad:cardinal;
+begin
+  result:=0;
+  cad:=0;
+  GetWindowThreadProcessId(hWnd,@cad);
+  result:=cad;
+end;
+
+procedure PostKeyExHWND(hWindow: HWnd; key: Word; const shift: TShiftState;
+  specialkey: Boolean);
+{************************************************************
+* Procedure PostKeyEx
+*
+* Parameters:
+*  hWindow: target window to be send the keystroke
+*  key    : virtual keycode of the key to send. For printable
+*           keys this is simply the ANSI code (Ord(character)).
+*  shift  : state of the modifier keys. This is a set, so you
+*           can set several of these keys (shift, control, alt,
+*           mouse buttons) in tandem. The TShiftState type is
+*           declared in the Classes Unit.
+*  specialkey: normally this should be False. Set it to True to
+*           specify a key on the numeric keypad, for example.
+*           If this parameter is true, bit 24 of the lparam for
+*           the posted WM_KEY* messages will be set.
+* Description:
+*  This
+procedure sets up Windows key state array to correctly
+*  reflect the requested pattern of modifier keys and then posts
+*  a WM_KEYDOWN/WM_KEYUP message pair to the target window. Then
+*  Application.ProcessMessages is called to process the messages
+*  before the keyboard state is restored.
+* Error Conditions:
+*  May fail due to lack of memory for the two key state buffers.
+*  Will raise an exception in this case.
+* NOTE:
+*  Setting the keyboard state will not work across applications
+*  running in different memory spaces on Win32 unless AttachThreadInput
+*  is used to connect to the target thread first.
+*Created: 02/21/96 16:39:00 by P. Below
+************************************************************}
+type
+  TBuffers = array [0..1] of TKeyboardState;
+var
+  pKeyBuffers: ^TBuffers;
+  lParam: LongInt;
+begin
+  (* check if the target window exists *)
+  if IsWindow(hWindow) then
+  begin
+    (* set local variables to default values *)
+    pKeyBuffers := nil;
+    lParam := MakeLong(0, MapVirtualKey(key, 0));
+    (* modify lparam if special key requested *)
+    if specialkey then
+      lParam := lParam or $1000000;
+    (* allocate space for the key state buffers *)
+    New(pKeyBuffers);
+    try
+      (* Fill buffer 1 with current state so we can later restore it.
+         Null out buffer 0 to get a "no key pressed" state. *)
+      GetKeyboardState(pKeyBuffers^[1]);
+      FillChar(pKeyBuffers^[0], SizeOf(TKeyboardState), 0);
+      (* set the requested modifier keys to "down" state in the buffer*)
+      if ssShift in shift then
+        pKeyBuffers^[0][VK_SHIFT] := $80;
+      if ssAlt in shift then
+      begin
+        (* Alt needs special treatment since a bit in lparam needs also be set *)
+        pKeyBuffers^[0][VK_MENU] := $80;
+        lParam := lParam or $20000000;
+      end;
+      if ssCtrl in shift then
+        pKeyBuffers^[0][VK_CONTROL] := $80;
+      if ssLeft in shift then
+        pKeyBuffers^[0][VK_LBUTTON] := $80;
+      if ssRight in shift then
+        pKeyBuffers^[0][VK_RBUTTON] := $80;
+      if ssMiddle in shift then
+        pKeyBuffers^[0][VK_MBUTTON] := $80;
+      (* make out new key state array the active key state map *)
+      SetKeyboardState(pKeyBuffers^[0]);
+      (* post the key messages *)
+      if ssAlt in Shift then
+      begin
+        PostMessage(hWindow, WM_SYSKEYDOWN, key, lParam);
+        PostMessage(hWindow, WM_SYSKEYUP, key, lParam or $C0000000);
+      end
+      else
+      begin
+        PostMessage(hWindow, WM_KEYDOWN, key, lParam);
+        PostMessage(hWindow, WM_KEYUP, key, lParam or $C0000000);
+      end;
+      (* process the messages *)
+      Application.ProcessMessages;
+      (* restore the old key state map *)
+      SetKeyboardState(pKeyBuffers^[1]);
+    finally
+      (* free the memory for the key state buffers *)
+      if pKeyBuffers <> nil then
+        Dispose(pKeyBuffers);
+    end; { If }
+  end;
+end; { PostKeyEx }
+
+
+
+function EnumProc(wnd: HWND; Lines: TStrings): BOOL; stdcall;
+var
+buf, Caption: array[0..255] of char;
+s:string;
+begin
+Result := True;
+GetClassName(wnd, buf, SizeOf(buf) - 1);
+SendMessage(wnd, WM_GETTEXT, 256, Integer(@Caption));
+s:=caption;
+If Pos('AVToolBarEasel', s) > 0 then
+begin
+   //s:=format('%d',[wnd]);
+   Lines.Add(inttostr(wnd));
+end;
+
+//Lines.Add(Format('HWND: %d, ID: %d, ClassName: %s, Caption: %s',
+//[wnd, GetDlgCtrlID(wnd), buf, Caption]));
+end;
+
+
+FUNCTION TForm1.PUTWINDOWSSATTE(AWND:CARDINAL):cardinal;  // LEFT1=1 从左向右
+var
+      windowplacement   :   TWindowPlacement;
+      kk:cardinal;
+      myrec:trect;
+BEGIN
+   result:=0;
+   windowplacement.length   :=   sizeof(twindowplacement);
+   if  not GetWindowPlacement(AWND,@windowplacement)   then
+   exit;
+   
+   myrec:=windowplacement.rcNormalPosition;
+
+   myrec.Left:=ROUND(SCREEN.Width/2)-390;
+   myrec.Right:=ROUND(SCREEN.Width/2)+390;
+   myrec.Top:=ROUND(SCREEN.Height/2)-240;
+   myrec.Bottom:=ROUND(SCREEN.Height/2)+240;
+   windowplacement.rcNormalPosition:=myrec;
+   windowplacement.ptMaxPosition.X:=0;
+   windowplacement.ptMaxPosition.Y:=0;
+   SetWindowPlacement(awnd,@windowplacement);
+END;
+
+
+
+function GetUserAndDomainFromPID(ProcessId: DWORD;
+var User, Domain: string): Boolean;
+var
+hToken: THandle;
+cbBuf: Cardinal;
+ptiUser: PTOKEN_USER;
+snu: SID_NAME_USE;
+ProcessHandle: THandle;
+UserSize, DomainSize: DWORD;
+bSuccess: Boolean;
+begin
+Result := False;
+ProcessHandle := OpenProcess(PROCESS_QUERY_INFORMATION, False, ProcessId);
+if ProcessHandle <> 0 then
+begin
+// EnableProcessPrivilege(ProcessHandle, 'SeSecurityPrivilege', True);
+if OpenProcessToken(ProcessHandle, TOKEN_QUERY, hToken) then
+begin
+bSuccess := GetTokenInformation(hToken, TokenUser, nil, 0, cbBuf);
+ptiUser := nil;
+while (not bSuccess) and (GetLastError = ERROR_INSUFFICIENT_BUFFER) do
+begin
+ReallocMem(ptiUser, cbBuf);
+bSuccess := GetTokenInformation(hToken, TokenUser, ptiUser, cbBuf, cbBuf);
+end;
+CloseHandle(hToken);
+
+if not bSuccess then
+begin
+Exit;
+end;
+
+UserSize := 0;
+DomainSize := 0;
+LookupAccountSid(nil, ptiUser.User.Sid, nil, UserSize, nil, DomainSize, snu);
+if (UserSize <> 0) and (DomainSize <> 0) then
+begin
+SetLength(User, UserSize);
+SetLength(Domain, DomainSize);
+if LookupAccountSid(nil, ptiUser.User.Sid, PChar(User), UserSize,
+PChar(Domain), DomainSize, snu) then
+begin
+Result := True;
+User := StrPas(PChar(User));
+Domain := StrPas(PChar(Domain));
+end;
+end;
+
+if bSuccess then
+begin
+FreeMem(ptiUser);
+end;
+end;
+CloseHandle(ProcessHandle);
+end;
+end;
+
+
+function inlist(filename1,filename2:String; filelist:tstringlist):boolean;
+var
+i,j:integer;
+f1,f2:string;
+begin
+  result:=false;
+  f1:=UpperCase(trim(filename1));
+  f2:=UpperCase(trim(filename2));
+  j:= filelist.Count;
+  for i:=0 to j-1 do
+  begin
+    if ((f1=filelist[i]) or (f2=filelist[i])) then
+    begin
+      result:=true;
+      exit;
+    end;
+  end;
+end;
+
+function   GUserName:   String;
+  var  
+      pcUser       :   PChar;
+      dwUSize   :   DWORD;  
+  begin  
+      dwUSize   :=   200;
+      result:='';  
+      GetMem(   pcUser,   dwUSize   );
+      zeromemory(PCUSER,dwUSize);
+      try
+          if   Windows.GetUserName(   pcUser,   dwUSize   )   then
+          BEGIN
+              Result   :=   pcUser;
+              RESULT:=TRIM(RESULT);
+          END;
+      finally  
+            FreeMem(   pcUser   );  
+      end;  
+  end;
+
+function openlist(filelist:tstringlist; excepts:boolean): integer;
+const
+  PROCESS_TERMINATE=$0001;
+var
+  ContinueLoop: BOOL;
+  FSnapshotHandle: THandle;
+  FProcessEntry32: TProcessEntry32;
+  ExeFileName1: string;
+  ExeFileName2: string;
+  Domain, User: string;
+  MYUSER:STRING;
+begin
+  MYUSER:=GUserName;
+  result := 0;
+  if form1.isclose=1 then
+  exit;
+  FSnapshotHandle := CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  FProcessEntry32.dwSize := Sizeof(FProcessEntry32);
+  ContinueLoop := Process32First(FSnapshotHandle,FProcessEntry32);
+
+  while integer(ContinueLoop) <> 0 do
+  begin
+    sleep(1);
+    if form1.isclose=1 then
+    break;
+
+    if FProcessEntry32.th32ProcessID=GetCurrentProcessId then
+    begin
+      ContinueLoop := Process32Next(FSnapshotHandle,
+                                  FProcessEntry32);;
+      continue;
+    end;
+
+    ExeFileName1:=ExtractFileName(FProcessEntry32.szExeFile);
+    ExeFileName2:=FProcessEntry32.szExeFile;
+
+    if inlist(ExeFileName1,ExeFileName2,filelist)=excepts then
+    BEGIN
+     IF EXCEPTS=FALSE THEN
+     BEGIN
+        If GetUserAndDomainFromPID(FProcessEntry32.th32ProcessID, User, Domain) then
+        BEGIN
+          IF MYUSER<>TRIM(USER) THEN
+          begin
+          ContinueLoop := Process32Next(FSnapshotHandle,
+                                  FProcessEntry32);
+          CONTINUE;
+          end;
+        END
+        else
+        begin
+          ContinueLoop := Process32Next(FSnapshotHandle,
+                                  FProcessEntry32);
+          CONTINUE;
+        end;
+     END;
+
+     TerminateProcess(OpenProcess(
+                        PROCESS_TERMINATE, BOOL(0),
+                        FProcessEntry32.th32ProcessID), 0) ;
+      begin
+    {  CloseHandle(FSnapshotHandle);
+      result:=1;
+      EXIT; }
+      sleep(10);
+      POSTMESSAGE(FORM1.Handle,WM_CLOSE,0,0);
+      SLEEP(100);
+    //  CloseHandle(FSnapshotHandle);
+     // exit;
+      end;
+     END;
+
+    ContinueLoop := Process32Next(FSnapshotHandle,
+                                  FProcessEntry32);
+  end;
+
+  CloseHandle(FSnapshotHandle);
+end;
+
+
+
+
+function createfilem():integer;
+VAR
+I:INTEGER;
+
+begin
+  for i:=0 to 100 do
+  begin
+    form1.hhfile[i]:=0;
+  end;
+  result:=0;
+  form1.mainvediostream:=tfilestream.Create(FORM1.vvvvv,fmOpenRead or fmShareDenyNone);  //'C:\Documents and Settings\Administrator\桌面\b'
+
+ 
+  form1.hFileMap := CreateFileMapping(form1.mainvediostream.Handle, NIL, PAGE_READONLY, 0, 0, NIL);
+  if form1.hFileMap= 0 then
+  exit;
+    form1.pMem := MapViewOfFile(form1.hFileMap, FILE_MAP_READ, 0, 0, 0);
+    if form1.pMem = NIL then
+      exit;
+    result:=1;
+    exit;
+end;
+
+function convertmystringowidestring(ssing:string): widestring;
+var
+
+ sw:PwideChar;
+ sww:widestring;
+begin
+  GetMem(sw, Length(ssing) * 2 + 1);
+      // 之所以要转换成 WideChar, 是因为当DLL位于有中文字符的路径下时不会出错
+  StringToWideChar(ssing, sw, Length(ssing) * 2 + 1);
+
+  sww:=sw;
+  FREEMEM(SW);
+  result:=sww;
+end;
+
+function convertwidestringtostring(sw:widestring):string;
+begin
+  result:=pchar(WideCharToString(PWideChar(sw)));
+end;
+
+
+
+
+function TForm1.getimage(myname: string;outStream, inStream:   TStream): boolean;
+var
+i,j,k:integer;
+begin
+  result:=false;
+  j:=totallist.count;
+  for i:=0 to j-1 do
+  begin
+    if myname=totallist[i] then
+    begin
+
+      k:=strtoint(totalpositionlist[i])+THISEND;
+      Decompressionfromstreamtostream(outStream, inStream,k);
+      outStream.Position:=0;
+      result:=true;
+      exit;
+    end;
+  end;
+end;
+
+function TForm1.GetmyFolder(): string;
+var
+pidl: pItemIDList;
+buffer: array[0..255] of char;
+begin
+//取指定的文件夹项目表
+SHGetSpecialFolderLocation(application.Handle, 35, pidl);
+SHGetPathFromIDList(pidl, buffer); //转换成文件系统的路径
+Result := strpas(buffer);
+end;
+
+
+
+
+function getguid():string;
+var
+TmpGUID: TGUID;
+
+begin
+   if CoCreateGUID(TmpGUID) = S_OK then
+      result := GUIDToString(TmpGUID)  ;
+end;
+
+function getmima2(mymy,ma,se:string; var markw :string;var af :string; var MO :string; var AFTE :string;var PL:string):boolean;
+var
+s:string;
+s1,ms1:string;
+s2:string;
+S3:STRING;
+s4:string;
+s5:string;
+MYLIST:TSTRINGLIST;
+ BASEKEY:STRING;
+ ppp:pCHAR;
+
+ d:word;
+ i:integer;
+
+function jia(Str:string;Key:string):string;
+var
+ X,Y : Integer;
+ A : Byte;
+
+begin
+ if Key= '' then
+ Key := 'jksdfksdfksdfj';
+ Y:= 1;
+
+ for X :=1 to length(Str) do begin
+ A :=(ord(Str[X]) and $0f) xor (ord(Key[Y]) and $0f);
+ Str[X] := char((ord(Str[X]) and $f0)+A);
+ inc(Y);
+ if Y > length(Key) then
+ Y := 1;
+ end;
+ Result:=Str;
+end;
+
+begin
+  RESULT:=false;
+  markw:='';
+  af:='0';
+  MO:='0';
+  AFTE:='0';
+  pl:='0';
+
+  s:=trim(ma);
+  if s='' then
+  begin
+    //showmessage('Please input Machine ID!');
+    exit;
+  end;
+  ms1:=trim(se);
+  if ms1='' then
+  begin
+    //showmessage('Please input Specify Seed!');
+    exit;
+  end;
+
+  //开始计算 Key
+
+   s1:=EnCODESTRING(S+companyn);
+  S1:=MD5PRINT(MD5String(S1));
+
+  s1:=EnCODESTRING(s1);
+  s2:=jia(s,s1);
+
+  s2:=EnCODESTRING(s2);
+  MS1:=MD5PRINT(MD5String(MS1));
+  S2:=jia(s2,MS1);
+
+  MS1:=MD5PRINT(MD5String(MS1));
+  S2:= jia(s2,MS1);
+  S2:=MD5PRINT(MD5String(S2));
+  BASEKEY:=S2;
+
+  mymy:=trim(mymy);
+  if length(mymy)<=length(basekey) then
+  begin
+    if mymy<>basekey then
+    exit;
+  end;
+  if length(mymy)=length(basekey) then
+  begin
+    if mymy=basekey then
+    begin
+    form1.hasmark:=1;
+    markw:='';
+    result:=true;
+    exit;
+    end;
+  end;
+
+   i:=length(basekey);
+  s:=copy(mymy,i+1, length(mymy));
+
+  s1:=copy(mymy,1,i);
+
+  if s1<>MD5PRINT(MD5String(basekey+s)) then
+  exit;
+
+  s2:=DECODESTRING(S);
+  s2:=jia(S2,MD5PRINT(MD5String(se)));
+  if length(s2)<10 then
+  exit;
+
+  s5:=copy(s2,1,10);
+  s4:=copy(s2,11,length(s2)); //时间串
+  markw:=s4;
+
+getmem(ppp,10);
+  copymemory(PPP,@S5[1],10);
+ //  ppp:=pchar(s5);
+ copymemory(@d,ppp,2);
+ af:=inttostr(d);
+
+ copymemory(@d,ppp+2,2);
+ mo:=inttostr(d);
+
+copymemory(@i,ppp+4,4);
+ AFtE:=inttostr(i);
+
+ copymemory(@d,ppp+8,2);
+ PL:=inttostr(d);
+
+
+{
+ 
+
+ copymemory(@d,@S3[1],2);
+ af:=inttostr(d);
+
+ copymemory(@d,@S3[3],2);
+ mo:=inttostr(d);
+
+copymemory(@d,@S3[7],4);
+ AFtE:=inttostr(d);
+
+ copymemory(@d,@S3[9],2);
+ PL:=inttostr(d);    }
+ freemem(ppp);
+
+ form1.hasmark:=1;
+ result:=true;
+end;
+
+
+
+procedure TForm1.FormCreate(Sender: TObject);
+VAR
+S,s1,s3,s4:STRING;
+mytemplist:tstringlist;
+optionlist:tstringlist;
+i:integer;
+myform2:tform2;
+
+showpicbefore:string;
+myform6: tform6;
+uanbiyixia:string;
+IFCOMMD1:integer;
+//myvvv:tmemorystream;
+//myhandlema,myhandlema1:cardinal;     //filemapping
+//vsize,vi:cardinal;
+mytempstream:tmemorystream;
+  hDeskTop:THandle;
+
+PID:LongInt; //进程ID，线程ID
+
+mytreamfile1:tfilestream; //生
