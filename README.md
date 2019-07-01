@@ -11,5 +11,5 @@ How to compile
 2. install  component JVCL340 which is in Components.
 3. Run Delphi 7 and open test.dpr.
 
-License
+License<p>
 Delphi-PDF-Parser is distributed under GNU AFFERO GPL V3. Because you will implicitely also be using MuPDF, its license GNU AFFERO GPL V3 applies as well. Copies of both are included in this repository.
